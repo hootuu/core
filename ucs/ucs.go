@@ -3,6 +3,8 @@ package ucs
 import (
 	"context"
 	"fmt"
+	"github.com/hootuu/core/hotu/here"
+	"github.com/hootuu/utils/errors"
 	"github.com/hootuu/utils/logger"
 	"github.com/hootuu/utils/sys"
 	"github.com/ipfs/boxo/coreiface/options"
@@ -14,12 +16,14 @@ import (
 	"github.com/ipfs/kubo/repo"
 	"github.com/ipfs/kubo/repo/fsrepo"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github/hootuu/core/mine"
 	"go.uber.org/zap"
-	"golang.org/x/exp/slog"
 )
 
-var gUcsRepoFsPath = "./.hotu/ucs"
+const (
+	ucsRepoFsPath = ".ucs"
+)
+
+var gUcsRepoFsPath string
 var gUcsRepo repo.Repo
 var gConfig *config.Config
 var gPlugins *loader.PluginLoader
@@ -29,29 +33,33 @@ const (
 	AlgorithmEd25519 = "ed25519"
 )
 
-func StartUp() error {
-	_, err := loadPlugins()
-	if err != nil {
-		gLogger.Error("ucs.load.plugins failed", zap.Error(err))
-		return err
+func init() {
+	gUcsRepoFsPath = here.Here.MustGetPath(ucsRepoFsPath)
+}
+
+func StartUp() *errors.Error {
+	var nErr error
+	_, nErr = loadPlugins()
+	if nErr != nil {
+		sys.Error("Startup UCS failed", nErr.Error())
+		return errors.Sys("ucs load plugin failed")
 	}
-	err = doInitIfNeeded()
-	if err != nil {
-		gLogger.Error("usc.init failed", zap.Error(err))
+	if err := doInitIfNeeded(); err != nil {
+		sys.Error("UCS Init failed", err.Error())
 		return err
 	}
 
-	gUcsRepo, err = fsrepo.Open(gUcsRepoFsPath)
-	if err != nil {
-		gLogger.Error("ucs.fs.Open failed", zap.Error(err))
-		return err
+	gUcsRepo, nErr = fsrepo.Open(gUcsRepoFsPath)
+	if nErr != nil {
+		sys.Error("Startup UCS failed", nErr.Error())
+		return errors.Sys("fsrepo open failed")
 	}
-	gConfig, err = gUcsRepo.Config()
-	if err != nil {
-		gLogger.Error("ucs.fs.Open failed", zap.Error(err))
-		return err
+	gConfig, nErr = gUcsRepo.Config()
+	if nErr != nil {
+		sys.Error("Startup UCS failed", nErr.Error())
+		return errors.Sys("ucs load config failed")
 	}
-	gNode, err = core.NewNode(context.Background(), &core.BuildCfg{
+	gNode, nErr = core.NewNode(context.Background(), &core.BuildCfg{
 		Online:                      true,
 		Repo:                        gUcsRepo,
 		Permanent:                   true,
@@ -63,38 +71,37 @@ func StartUp() error {
 		},
 	})
 	gNode.IsDaemon = true
-	mine.Mine.BindNode(gNode)
-	sys.Info("ucs node id: ", mine.Mine.Node().Identity.String())
+	here.Here.BindNode(gNode)
 
 	var relayPeers []peer.AddrInfo
 
-	if err := gNode.Bootstrap(bootstrap.BootstrapConfigWithPeers(relayPeers)); err != nil {
-		slog.Error("ucs.node.Bootstrap failed", err)
-		return err
+	if nErr := gNode.Bootstrap(bootstrap.BootstrapConfigWithPeers(relayPeers)); nErr != nil {
+		gLogger.Error("ucs.node.Bootstrap failed", zap.Error(nErr))
+		return errors.Sys("ucs node bootstrap failed")
 	}
 	return nil
 }
 
-func doInitIfNeeded() error {
+func doInitIfNeeded() *errors.Error {
 	if fsrepo.IsInitialized(gUcsRepoFsPath) {
 		return nil
 	}
-	slog.Info("init hotu-ucs at:", gUcsRepoFsPath)
+	sys.Info("UCS Init At:", gUcsRepoFsPath)
 
-	identity, err := config.CreateIdentity(
+	identity, nErr := config.CreateIdentity(
 		logger.GetLoggerWriter(logger.Console),
 		[]options.KeyGenerateOption{
 			options.Key.Type(AlgorithmEd25519),
 		},
 	)
-	if err != nil {
-		slog.Error("ucs.CreateIdentity failed", err)
-		return err
+	if nErr != nil {
+		sys.Error("ucs.CreateIdentity failed", nErr.Error())
+		return errors.Sys("config CreateIdentity failed")
 	}
-	conf, err := config.InitWithIdentity(identity)
-	if err != nil {
-		slog.Error("usc Config InitWithIdentity failed", err)
-		return err
+	conf, nErr := config.InitWithIdentity(identity)
+	if nErr != nil {
+		sys.Error("usc Config InitWithIdentity failed", nErr.Error())
+		return errors.Sys("config InitWithIdentity failed")
 	}
 	//conf.API.HTTPHeaders = make(map[string][]string)
 	//conf.API.HTTPHeaders["Access-Control-Allow-Origin"] = []string{"*"}
@@ -129,9 +136,9 @@ func doInitIfNeeded() error {
 	//	OptimisticProvideJobsPoolSize: 10,
 	//}
 
-	if err := fsrepo.Init(gUcsRepoFsPath, conf); err != nil {
-		slog.Error("ucs.fs.Init failed", err)
-		return err
+	if nErr := fsrepo.Init(gUcsRepoFsPath, conf); nErr != nil {
+		sys.Error("UCS Init Failed:", nErr)
+		return errors.Sys("fsrepo init failed")
 	}
 	return nil
 }
@@ -139,16 +146,16 @@ func doInitIfNeeded() error {
 func loadPlugins() (*loader.PluginLoader, error) {
 	gPlugins, err := loader.NewPluginLoader(gUcsRepoFsPath)
 	if err != nil {
-		slog.Error("loader.NewPluginLoader failed", err)
+		sys.Error("loader.NewPluginLoader failed", err.Error())
 		return nil, fmt.Errorf("error loading plugins: %s", err)
 	}
 	if err := gPlugins.Initialize(); err != nil {
-		slog.Error("plugins.Initialize failed", err)
+		sys.Error("plugins.Initialize failed", err.Error())
 		return nil, fmt.Errorf("error initializing plugins: %s", err)
 	}
 
 	if err := gPlugins.Inject(); err != nil {
-		slog.Error("plugins.Inject failed", err)
+		sys.Error("plugins.Inject failed", err.Error())
 		return nil, fmt.Errorf("error inject plugins: %s", err)
 	}
 	return gPlugins, nil

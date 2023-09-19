@@ -2,64 +2,71 @@ package main
 
 import (
 	"fmt"
-	"github.com/hootuu/utils/errors"
-	"github.com/hootuu/utils/logger"
-	"github/hootuu/core/broadcast"
-	"github/hootuu/core/ucs"
-	"go.uber.org/zap"
+	"github.com/hootuu/core/broadcast"
+	"github.com/hootuu/core/hotu"
+	"github.com/hootuu/core/plugins/linkerx"
+	"github.com/hootuu/domain/chain"
+	"github.com/hootuu/domain/point"
+	"github.com/hootuu/domain/scope"
 	"time"
 )
 
-type testListener struct {
-}
-
-func (t testListener) GetCode() string {
-	return "testListener"
-}
-
-func (t testListener) Care(msg *broadcast.Message) bool {
-	return true
-}
-
-func (t testListener) Deal(msg *broadcast.Message) *errors.Error {
-	//fmt.Println("deal msg:::::", msg.Summary())
-	return nil
-}
-
 func main() {
+	//
+	//if err := ucs.StartUp(); err != nil {
+	//	logger.Logger.Error("ucs.StartUp failed", zap.Error(err))
+	//	return
+	//}
+	//
+	//if err := ucs.StartGW(); err != nil {
+	//	logger.Logger.Error("ucs.StartGW failed", zap.Error(err))
+	//	return
+	//}
+	//
+	//if err := ucs.StartWebui(); err != nil {
+	//	logger.Logger.Info("ucs.StartWebui failed", zap.String("err", err.Error()))
+	//	return
+	//}
+	//
+	//mq, err := broadcast.NewMQ("vn.join")
+	//if err != nil {
+	//	logger.Logger.Error("ucs.StartWebui failed", zap.Error(err))
+	//	return
+	//}
+	//mq.RegisterListener(&testListener{})
+	//mq.StartListening()
 
-	if err := ucs.StartUp(); err != nil {
-		logger.Logger.Error("ucs.StartUp failed", zap.Error(err))
-		return
-	}
+	hotu.Hotu.Init(point.Modes.Angry, scope.HotuAngryLead)
+	hotu.Hotu.StartUp()
 
-	if err := ucs.StartGW(); err != nil {
-		logger.Logger.Error("ucs.StartGW failed", zap.Error(err))
-		return
-	}
-
-	if err := ucs.StartWebui(); err != nil {
-		logger.Logger.Info("ucs.StartWebui failed", zap.String("err", err.Error()))
-		return
-	}
-
-	mq, err := broadcast.NewMQ("vn.join")
-	if err != nil {
-		logger.Logger.Error("ucs.StartWebui failed", zap.Error(err))
-		return
-	}
-	mq.RegisterListener(&testListener{})
-	mq.StartListening()
 	go func() {
+		first := true
 		for {
-			err := mq.Publish(broadcast.Data{
+			data := broadcast.Data{
 				VN:        "a",
 				Scope:     "b",
-				ReplyID:   "c",
-				Data:      "d",
 				Timestamp: time.Now().UnixMilli(),
 				Tag:       []string{"A"},
-			})
+			}
+			if first {
+				data.WithData(chain.CreationLink{
+					Lead: scope.Lead{
+						VN:    "a",
+						Scope: "b",
+					},
+					Code: "order",
+				})
+			} else {
+				data.WithData(chain.Link{
+					Lead: scope.Lead{
+						VN:    "a",
+						Scope: "b",
+					},
+					Code: "order",
+					Data: fmt.Sprintf("ORDERID_%d", time.Now().UnixMilli()),
+				})
+			}
+			err := linkerx.LinkerX.AppendMQ.Publish(data)
 			if err != nil {
 				fmt.Println(err)
 			}

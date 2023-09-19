@@ -2,6 +2,7 @@ package broadcast
 
 import (
 	"encoding/json"
+	"github.com/hootuu/domain/point"
 	"github.com/hootuu/utils/errors"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"go.uber.org/zap"
@@ -33,22 +34,26 @@ func Decode[T any](data []byte) (*T, *errors.Error) {
 	return &m, nil
 }
 
+type Peer struct {
+	ID   string     `bson:"id" json:"id"`
+	Mode point.Mode `bson:"mode" json:"mode"`
+}
+
 type Message struct {
+	Peer      Peer     `bson:"peer" json:"peer"`
 	Topic     string   `bson:"topic" json:"topic"`
 	VN        string   `bson:"vn" json:"vn"`
 	Scope     string   `bson:"scope" json:"scope"`
 	ID        string   `bson:"id" json:"id"`
-	ReplyID   string   `bson:"reply_id,omitempty" json:"reply_id"`
-	From      string   `bson:"from" json:"from"`
 	Data      []byte   `bson:"data" json:"data"`
 	Timestamp int64    `bson:"timestamp" json:"timestamp"`
 	Tag       []string `bson:"tag,omitempty" json:"tag,omitempty"`
 }
 
 type Data struct {
+	Peer      Peer     `bson:"peer" json:"peer"`
 	VN        string   `bson:"vn" json:"vn"`
 	Scope     string   `bson:"scope" json:"scope"`
-	ReplyID   string   `bson:"reply_id,omitempty" json:"reply_id"`
 	Data      string   `bson:"data" json:"data"`
 	Timestamp int64    `bson:"timestamp" json:"timestamp"`
 	Tag       []string `bson:"tag,omitempty" json:"tag,omitempty"`
@@ -90,12 +95,11 @@ func MessageOf(pbMsg *pubsub.Message) (*Message, *errors.Error) {
 		return nil, err
 	}
 	msg := &Message{
+		Peer:      innerData.Peer,
 		Topic:     pbMsg.GetTopic(),
 		VN:        innerData.VN,
 		Scope:     innerData.Scope,
 		ID:        pbMsg.ID,
-		ReplyID:   innerData.ReplyID,
-		From:      pbMsg.GetFrom().String(),
 		Data:      []byte(innerData.Data),
 		Timestamp: innerData.Timestamp,
 		Tag:       innerData.Tag,
@@ -103,8 +107,12 @@ func MessageOf(pbMsg *pubsub.Message) (*Message, *errors.Error) {
 	return msg, nil
 }
 
+func MessageScan[T any](msg *Message) (*T, *errors.Error) {
+	return Decode[T](msg.Data)
+}
+
 func (msg *Message) Summary() string {
 	return strings.Join([]string{
-		msg.From, msg.VN, msg.Scope,
+		msg.Peer.ID, msg.VN, msg.Scope,
 	}, "|")
 }

@@ -3,11 +3,12 @@ package broadcast
 import (
 	"context"
 	"fmt"
+	"github.com/hootuu/core/hotu/here"
 	"github.com/hootuu/utils/errors"
 	"github.com/hootuu/utils/sys"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github/hootuu/core/mine"
 	"go.uber.org/zap"
+	"strings"
 	"sync"
 )
 
@@ -26,7 +27,7 @@ type MQ struct {
 
 func NewMQ(topic string) (*MQ, *errors.Error) {
 	mq := &MQ{
-		Topic:         topic,
+		Topic:         strings.ToUpper(topic),
 		listenerArray: []Listener{},
 	}
 	err := mq.doInit()
@@ -59,7 +60,7 @@ func (mq *MQ) Publish(msgData Data) *errors.Error {
 		return errors.Sys("mq.Publish failed", nErr)
 	}
 	if sys.RunMode.IsRd() {
-		gLogger.Info("mq.topic.Publish", zap.Any("data", msgData))
+		gLogger.Info("mq.topic.Publish", zap.Int64("data", msgData.Timestamp))
 	}
 	return nil
 }
@@ -72,13 +73,20 @@ func (mq *MQ) StartListening() {
 				gLogger.Error("subscription.Next failed", zap.Error(nErr))
 				continue
 			}
+			if here.Here.ID() == payload.GetFrom().String() {
+				continue
+			}
+			if sys.RunMode.IsRd() {
+				gLogger.Info("Get Message", zap.String("message", payload.GetTopic()))
+			}
 			msg, err := MessageOf(payload)
 			if err != nil {
 				gLogger.Error("payload invalid", zap.Error(err))
 				continue
 			}
 			for _, listener := range mq.listenerArray {
-				care := listener.Care(msg)
+				ctx := context.Background()
+				care := listener.Care(ctx, msg)
 				if !care {
 					continue
 				}
@@ -87,7 +95,7 @@ func (mq *MQ) StartListening() {
 						zap.String("listener", listener.GetCode()),
 						zap.String("message", msg.Summary()))
 				}
-				err = listener.Deal(msg)
+				err = listener.Deal(ctx, msg)
 				if err != nil {
 					gLogger.Error("deal message failed",
 						zap.String("listener", listener.GetCode()),
@@ -101,7 +109,7 @@ func (mq *MQ) StartListening() {
 
 func (mq *MQ) doInit() *errors.Error {
 	var nErr error
-	mq.topic, nErr = mine.Mine.Node().PubSub.Join(fmt.Sprintf("%s.%s", rootProtocol, mq.Topic))
+	mq.topic, nErr = here.Here.Node().PubSub.Join(fmt.Sprintf("%s.%s", rootProtocol, mq.Topic))
 	if nErr != nil {
 		gLogger.Error("join topic failed", zap.Error(nErr))
 		return errors.Sys("join topic error", nErr)

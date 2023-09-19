@@ -1,9 +1,12 @@
 package broadcast
 
-import "github.com/hootuu/utils/errors"
+import (
+	"context"
+	"github.com/hootuu/utils/errors"
+)
 
 type Listener interface {
 	GetCode() string
-	Care(msg *Message) bool
-	Deal(msg *Message) *errors.Error
+	Care(ctx context.Context, msg *Message) bool
+	Deal(ctx context.Context, msg *Message) *errors.Error
 }
